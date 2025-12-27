@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { mockService } from '../services/mockData';
 import { Vehicle, Client, VehicleDamage } from '../types';
-import { Search, Plus, Car, PenTool, Trash2, X, Save, User, Camera, Image as ImageIcon, AlertTriangle } from 'lucide-react';
+import { Search, Plus, Car, PenTool, Trash2, X, Save, User, Camera, Image as ImageIcon, AlertTriangle, CheckCircle2 } from 'lucide-react';
 
 // Extended interface for display purposes
 interface VehicleDisplay extends Vehicle {
@@ -74,9 +74,27 @@ const Vehicles: React.FC = () => {
     setVehicleToDelete(null);
   };
 
+  const validatePlate = (plate: string) => {
+    // Remove hyphen and spaces
+    const clean = plate.replace(/[^A-Z0-9]/g, '').toUpperCase();
+    
+    // Check Old Format: 3 Letters + 4 Numbers (ABC1234)
+    const isOld = /^[A-Z]{3}[0-9]{4}$/.test(clean);
+    
+    // Check Mercosul Format: 3 Letters + 1 Number + 1 Letter + 2 Numbers (ABC1D23)
+    const isMercosul = /^[A-Z]{3}[0-9][A-Z][0-9]{2}$/.test(clean);
+
+    return isOld || isMercosul;
+  };
+
   const handleSaveVehicle = async () => {
     if (!currentVehicle.clientId) return alert("Selecione um cliente.");
-    if (!currentVehicle.model || !currentVehicle.plate) return alert("Modelo e Placa são obrigatórios.");
+    if (!currentVehicle.model) return alert("Modelo é obrigatório.");
+    if (!currentVehicle.plate) return alert("Placa é obrigatória.");
+
+    if (!validatePlate(currentVehicle.plate)) {
+      return alert("Placa inválida. Certifique-se de usar o formato Padrão (ABC-1234) ou Mercosul (ABC1D23).");
+    }
 
     await mockService.saveVehicle(currentVehicle as Vehicle);
     setIsModalOpen(false);
@@ -122,6 +140,17 @@ const Vehicles: React.FC = () => {
         d.id === damageId ? { ...d, description: newDescription } : d
       )
     }));
+  };
+
+  const getPlateStyle = (plate: string) => {
+    // Simple check to style Mercosul differently in UI if needed, currently just returns style
+    const clean = plate.replace(/[^A-Z0-9]/g, '').toUpperCase();
+    const isMercosul = /^[A-Z]{3}[0-9][A-Z][0-9]{2}$/.test(clean);
+    
+    if (isMercosul) {
+      return "bg-white border-blue-600 text-blue-700 dark:bg-dark-900 dark:text-blue-400 dark:border-blue-500";
+    }
+    return "bg-gray-100 text-gray-700 dark:bg-dark-800 dark:text-gray-300 dark:border-dark-700";
   };
 
   const filteredVehicles = vehicles.filter(v => 
@@ -195,7 +224,11 @@ const Vehicles: React.FC = () => {
                         </div>
                       </div>
                     </td>
-                    <td className="px-6 py-4 font-mono font-medium">{vehicle.plate}</td>
+                    <td className="px-6 py-4">
+                      <span className={`px-2 py-1 rounded border font-mono font-medium text-xs ${getPlateStyle(vehicle.plate)}`}>
+                        {vehicle.plate}
+                      </span>
+                    </td>
                     <td className="px-6 py-4">
                        <div className="flex items-center gap-2">
                           <User size={14} className="text-gray-400"/>
@@ -267,7 +300,7 @@ const Vehicles: React.FC = () => {
                   >
                     <option value="">Selecione um cliente...</option>
                     {clients.map(c => (
-                      <option key={c.id} value={c.id}>{c.name} - CPF/CNPJ: {c.id}</option>
+                      <option key={c.id} value={c.id}>{c.name} - ID: {c.id.substring(0,8)}</option>
                     ))}
                   </select>
                 </div>
@@ -306,14 +339,20 @@ const Vehicles: React.FC = () => {
                     />
                   </div>
                   <div className="col-span-2">
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Placa</label>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Placa (Antiga ou Mercosul)</label>
                     <input 
                       type="text" 
-                      placeholder="ABC-1234"
+                      placeholder="ABC-1234 ou ABC1D23"
+                      maxLength={8}
                       value={currentVehicle.plate || ''}
-                      onChange={(e) => setCurrentVehicle({ ...currentVehicle, plate: e.target.value.toUpperCase() })}
+                      onChange={(e) => {
+                        // Allow uppercase, alphanumeric and hyphen only
+                        const val = e.target.value.toUpperCase().replace(/[^A-Z0-9-]/g, '');
+                        setCurrentVehicle({ ...currentVehicle, plate: val });
+                      }}
                       className="w-full bg-gray-50 dark:bg-dark-950 border border-gray-300 dark:border-dark-700 rounded-lg px-3 py-2 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-primary-500 font-mono"
                     />
+                    <p className="text-xs text-gray-500 mt-1">Ex: <strong>ABC-1234</strong> (Padrão) ou <strong>ABC1D23</strong> (Mercosul)</p>
                   </div>
                 </div>
 

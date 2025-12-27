@@ -281,12 +281,8 @@ export const mockService = {
   },
 
   saveCompanySettings: async (settings: CompanySettings): Promise<void> => {
-    // We assume there's only one settings row, or we upsert with a fixed ID if we enforce it.
-    // For now, we try to grab the first ID, otherwise insert.
-    const { data: existing } = await supabase.from('settings').select('id').limit(1).maybeSingle();
-    
-    const settingsData = {
-      ...(existing?.id ? { id: existing.id } : {}), // Keep ID if exists
+    // Determine payload mapped to snake_case
+    const dbPayload = {
       name: settings.name,
       address: settings.address,
       phone: settings.phone,
@@ -297,7 +293,24 @@ export const mockService = {
       low_stock_threshold: settings.lowStockThreshold
     };
 
-    const { error } = await supabase.from('settings').upsert(settingsData);
-    if (error) throw error;
+    // Check if we have an existing row (assuming singleton table)
+    const { data: existing } = await supabase.from('settings').select('id').limit(1).maybeSingle();
+    
+    if (existing?.id) {
+      // Update existing record
+      const { error } = await supabase
+        .from('settings')
+        .update(dbPayload)
+        .eq('id', existing.id);
+      
+      if (error) throw error;
+    } else {
+      // Insert new record
+      const { error } = await supabase
+        .from('settings')
+        .insert(dbPayload);
+      
+      if (error) throw error;
+    }
   }
 };

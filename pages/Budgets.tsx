@@ -414,21 +414,28 @@ const Budgets: React.FC = () => {
       return;
     }
 
-    const isNew = !currentBudget.id;
-    const budgetToSave = {
-      ...currentBudget,
-      id: currentBudget.id || Math.random().toString(36).substr(2, 9).toUpperCase(),
-    } as Budget;
+    try {
+      // Create a copy to save. If it's new (id is empty string), Supabase will generate UUID.
+      // Do NOT generate client-side ID to avoid UUID format errors.
+      const budgetToSave = { ...currentBudget } as Budget;
+      
+      const isNew = !budgetToSave.id;
 
-    if (isNew) {
-      await mockService.createBudget(budgetToSave);
-      setBudgets(prev => [budgetToSave, ...prev]);
-    } else {
-      // Update local state for mock
-      setBudgets(prev => prev.map(b => b.id === budgetToSave.id ? budgetToSave : b));
+      // Perform upsert via service
+      const savedBudget = await mockService.createBudget(budgetToSave);
+
+      if (isNew) {
+        setBudgets(prev => [savedBudget, ...prev]);
+      } else {
+        // Update existing item in state
+        setBudgets(prev => prev.map(b => b.id === savedBudget.id ? savedBudget : b));
+      }
+      
+      setIsModalOpen(false);
+    } catch (error) {
+      console.error("Erro ao salvar orçamento:", error);
+      alert("Erro ao salvar. Verifique se os dados estão corretos.");
     }
-    
-    setIsModalOpen(false);
   };
 
   // Helper to get vehicles for selected client
@@ -513,7 +520,7 @@ const Budgets: React.FC = () => {
               ) : (
                 filteredBudgets.map((budget) => (
                   <tr key={budget.id} className="hover:bg-gray-50 dark:hover:bg-dark-800/50 transition-colors">
-                    <td className="px-6 py-4 font-mono text-xs">{budget.id.toUpperCase()}</td>
+                    <td className="px-6 py-4 font-mono text-xs">{budget.id.toUpperCase().substring(0, 8)}</td>
                     <td className="px-6 py-4">
                       <div className="flex flex-col">
                         <span className="font-medium text-gray-900 dark:text-white">{budget.clientName}</span>
