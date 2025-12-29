@@ -1,13 +1,10 @@
 import { GoogleGenAI } from "@google/genai";
 
-const apiKey = process.env.API_KEY || ''; 
-// Note: In a real production app, never expose API keys on the client side. 
-// This should be proxied through a backend.
-
-const ai = new GoogleGenAI({ apiKey });
+// Initialize directly as per guidelines
+const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
 export const generateDiagnosis = async (symptoms: string, vehicleInfo: string): Promise<string> => {
-  if (!apiKey) {
+  if (!process.env.API_KEY) {
     return "API Key is missing. Please configure your environment.";
   }
 

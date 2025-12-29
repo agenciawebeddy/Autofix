@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   LayoutDashboard, 
   Users, 
@@ -13,9 +13,13 @@ import {
   Search,
   Bell,
   Sparkles,
-  Settings
+  Settings,
+  Loader2,
+  ChevronRight
 } from 'lucide-react';
-import { Link, useLocation } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { mockService } from '../services/mockData';
+import { GlobalSearchResults } from '../types';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -27,6 +31,15 @@ interface LayoutProps {
 const Layout: React.FC<LayoutProps> = ({ children, darkMode, toggleDarkMode, openAiModal }) => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const location = useLocation();
+  const navigate = useNavigate();
+
+  // Search State
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<GlobalSearchResults | null>(null);
+  const [isSearching, setIsSearching] = useState(false);
+  const [showResults, setShowResults] = useState(false);
+  const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const searchContainerRef = useRef<HTMLDivElement>(null);
 
   const navItems = [
     { label: 'Dashboard', icon: <LayoutDashboard size={20} />, path: '/' },
@@ -39,6 +52,47 @@ const Layout: React.FC<LayoutProps> = ({ children, darkMode, toggleDarkMode, ope
   ];
 
   const isActive = (path: string) => location.pathname === path;
+
+  // Search Logic
+  useEffect(() => {
+    if (searchQuery.length > 1) {
+      setIsSearching(true);
+      if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current);
+      
+      searchTimeoutRef.current = setTimeout(async () => {
+        try {
+          const results = await mockService.globalSearch(searchQuery);
+          setSearchResults(results);
+          setShowResults(true);
+        } catch (error) {
+          console.error("Search error", error);
+        } finally {
+          setIsSearching(false);
+        }
+      }, 500); // Debounce 500ms
+    } else {
+      setSearchResults(null);
+      setShowResults(false);
+      setIsSearching(false);
+    }
+  }, [searchQuery]);
+
+  // Close search on click outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (searchContainerRef.current && !searchContainerRef.current.contains(event.target as Node)) {
+        setShowResults(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const handleSearchResultClick = (path: string) => {
+    setShowResults(false);
+    setSearchQuery('');
+    navigate(path);
+  };
 
   return (
     <div className={`flex h-screen overflow-hidden ${darkMode ? 'dark' : ''}`}>
@@ -112,16 +166,102 @@ const Layout: React.FC<LayoutProps> = ({ children, darkMode, toggleDarkMode, ope
             <Menu size={24} />
           </button>
 
-          <div className="flex-1 max-w-lg mx-4 hidden md:block">
+          {/* Search Bar Container */}
+          <div className="flex-1 max-w-lg mx-4 hidden md:block" ref={searchContainerRef}>
             <div className="relative">
               <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-gray-400">
-                <Search size={18} />
+                {isSearching ? <Loader2 size={18} className="animate-spin text-primary-500" /> : <Search size={18} />}
               </span>
               <input 
                 type="text" 
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                onFocus={() => { if(searchQuery.length > 1 && searchResults) setShowResults(true); }}
                 placeholder="Buscar clientes, orçamentos, placas..." 
                 className="w-full bg-gray-100 dark:bg-dark-800 text-gray-900 dark:text-gray-100 rounded-lg pl-10 pr-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
               />
+
+              {/* Search Results Dropdown */}
+              {showResults && searchResults && (
+                <div className="absolute top-full left-0 right-0 mt-2 bg-white dark:bg-dark-900 rounded-xl shadow-xl border border-gray-200 dark:border-dark-800 overflow-hidden z-50">
+                  <div className="max-h-[60vh] overflow-y-auto">
+                    
+                    {/* No Results */}
+                    {searchResults.clients.length === 0 && searchResults.vehicles.length === 0 && searchResults.budgets.length === 0 && (
+                      <div className="p-4 text-center text-gray-500 text-sm">
+                        Nenhum resultado encontrado.
+                      </div>
+                    )}
+
+                    {/* Clients */}
+                    {searchResults.clients.length > 0 && (
+                      <div className="py-2">
+                        <h4 className="px-4 py-1 text-xs font-semibold text-gray-500 uppercase flex items-center gap-1">
+                          <Users size={12} /> Clientes
+                        </h4>
+                        {searchResults.clients.map(c => (
+                          <div 
+                            key={c.id} 
+                            onClick={() => handleSearchResultClick('/clients')}
+                            className="px-4 py-2 hover:bg-gray-50 dark:hover:bg-dark-800 cursor-pointer flex items-center justify-between group"
+                          >
+                            <div>
+                              <p className="text-sm font-medium text-gray-900 dark:text-white">{c.name}</p>
+                              <p className="text-xs text-gray-500">{c.email || c.phone}</p>
+                            </div>
+                            <ChevronRight size={14} className="text-gray-400 opacity-0 group-hover:opacity-100" />
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Vehicles */}
+                    {searchResults.vehicles.length > 0 && (
+                      <div className="py-2 border-t border-gray-100 dark:border-dark-800">
+                        <h4 className="px-4 py-1 text-xs font-semibold text-gray-500 uppercase flex items-center gap-1">
+                          <Car size={12} /> Veículos
+                        </h4>
+                        {searchResults.vehicles.map(v => (
+                          <div 
+                            key={v.id} 
+                            onClick={() => handleSearchResultClick('/vehicles')}
+                            className="px-4 py-2 hover:bg-gray-50 dark:hover:bg-dark-800 cursor-pointer flex items-center justify-between group"
+                          >
+                            <div>
+                              <p className="text-sm font-medium text-gray-900 dark:text-white">{v.make} {v.model} - <span className="font-mono text-xs bg-gray-100 dark:bg-dark-800 px-1 rounded">{v.plate}</span></p>
+                              <p className="text-xs text-gray-500">{v.clientName}</p>
+                            </div>
+                            <ChevronRight size={14} className="text-gray-400 opacity-0 group-hover:opacity-100" />
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Budgets */}
+                    {searchResults.budgets.length > 0 && (
+                      <div className="py-2 border-t border-gray-100 dark:border-dark-800">
+                        <h4 className="px-4 py-1 text-xs font-semibold text-gray-500 uppercase flex items-center gap-1">
+                          <FileText size={12} /> Orçamentos
+                        </h4>
+                        {searchResults.budgets.map(b => (
+                          <div 
+                            key={b.id} 
+                            onClick={() => handleSearchResultClick('/budgets')}
+                            className="px-4 py-2 hover:bg-gray-50 dark:hover:bg-dark-800 cursor-pointer flex items-center justify-between group"
+                          >
+                            <div>
+                              <p className="text-sm font-medium text-gray-900 dark:text-white">#{b.id.toUpperCase().substring(0,8)} - {b.clientName}</p>
+                              <p className="text-xs text-gray-500">{new Date(b.dateCreated).toLocaleDateString()} - R$ {b.totalAmount.toLocaleString('pt-BR')}</p>
+                            </div>
+                            <ChevronRight size={14} className="text-gray-400 opacity-0 group-hover:opacity-100" />
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                  </div>
+                </div>
+              )}
             </div>
           </div>
 

@@ -86,4 +86,11 @@ export interface CompanySettings {
   responsibleName: string; // Nome do Responsável
   logoUrl?: string; // Base64 string
   lowStockThreshold: number; // Configuração de estoque baixo
+  primaryColor?: string; // Custom dashboard color
+}
+
+export interface GlobalSearchResults {
+  clients: Client[];
+  vehicles: (Vehicle & { clientName?: string })[];
+  budgets: Budget[];
 }

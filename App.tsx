@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useLayoutEffect } from 'react';
 import { HashRouter, Routes, Route, Navigate } from 'react-router-dom';
 import Layout from './components/Layout';
 import Dashboard from './pages/Dashboard';
@@ -10,6 +10,7 @@ import Reports from './pages/Reports';
 import Settings from './pages/Settings';
 import { Sparkles, X, MessageSquare } from 'lucide-react';
 import { generateDiagnosis } from './services/geminiService';
+import { mockService, applyTheme } from './services/mockData';
 
 const App: React.FC = () => {
   const [darkMode, setDarkMode] = useState(() => {
@@ -27,7 +28,14 @@ const App: React.FC = () => {
   const [aiResponse, setAiResponse] = useState('');
   const [aiLoading, setAiLoading] = useState(false);
 
+  // Use useLayoutEffect for immediate theme application before render if possible, or simple useEffect
+  useLayoutEffect(() => {
+     const localColor = localStorage.getItem('primaryColor');
+     if (localColor) applyTheme(localColor);
+  }, []);
+
   useEffect(() => {
+    // Apply Dark Mode
     if (darkMode) {
       document.documentElement.classList.add('dark');
       localStorage.setItem('theme', 'dark');
@@ -35,6 +43,21 @@ const App: React.FC = () => {
       document.documentElement.classList.remove('dark');
       localStorage.setItem('theme', 'light');
     }
+
+    // Apply Brand Color Theme (Async Sync with DB)
+    const loadTheme = async () => {
+       try {
+         const settings = await mockService.getCompanySettings();
+         if (settings.primaryColor) {
+           applyTheme(settings.primaryColor);
+           // Update local storage to match DB
+           localStorage.setItem('primaryColor', settings.primaryColor);
+         }
+       } catch (e) {
+         console.warn("Failed to load theme settings from DB, keeping local.", e);
+       }
+    };
+    loadTheme();
   }, [darkMode]);
 
   const toggleDarkMode = () => setDarkMode(!darkMode);
@@ -70,7 +93,7 @@ const App: React.FC = () => {
           <div className="bg-white dark:bg-dark-900 w-full max-w-2xl rounded-2xl shadow-2xl border border-gray-200 dark:border-dark-700 flex flex-col max-h-[90vh]">
             <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-dark-800">
               <div className="flex items-center gap-3">
-                <div className="bg-gradient-to-br from-indigo-500 to-purple-600 p-2 rounded-lg text-white">
+                <div className="bg-gradient-to-br from-primary-500 to-purple-600 p-2 rounded-lg text-white">
                   <Sparkles size={24} />
                 </div>
                 <div>
@@ -94,7 +117,7 @@ const App: React.FC = () => {
                       value={aiPromptVehicle}
                       onChange={(e) => setAiPromptVehicle(e.target.value)}
                       placeholder="Ex: Honda Civic 2018 2.0" 
-                      className="w-full bg-gray-50 dark:bg-dark-950 border border-gray-300 dark:border-dark-700 rounded-lg px-4 py-3 focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:text-white"
+                      className="w-full bg-gray-50 dark:bg-dark-950 border border-gray-300 dark:border-dark-700 rounded-lg px-4 py-3 focus:outline-none focus:ring-2 focus:ring-primary-500 dark:text-white"
                     />
                   </div>
                   <div>
@@ -104,13 +127,13 @@ const App: React.FC = () => {
                       value={aiPromptSymptoms}
                       onChange={(e) => setAiPromptSymptoms(e.target.value)}
                       placeholder="Ex: Barulho de estalo ao virar o volante para a esquerda..." 
-                      className="w-full bg-gray-50 dark:bg-dark-950 border border-gray-300 dark:border-dark-700 rounded-lg px-4 py-3 h-32 focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:text-white resize-none"
+                      className="w-full bg-gray-50 dark:bg-dark-950 border border-gray-300 dark:border-dark-700 rounded-lg px-4 py-3 h-32 focus:outline-none focus:ring-2 focus:ring-primary-500 dark:text-white resize-none"
                     />
                   </div>
                   <button 
                     type="submit" 
                     disabled={aiLoading}
-                    className="w-full bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white font-bold py-3 rounded-lg shadow-lg flex items-center justify-center gap-2 disabled:opacity-70 disabled:cursor-not-allowed transition-all"
+                    className="w-full bg-gradient-to-r from-primary-600 to-purple-600 hover:from-primary-700 hover:to-purple-700 text-white font-bold py-3 rounded-lg shadow-lg flex items-center justify-center gap-2 disabled:opacity-70 disabled:cursor-not-allowed transition-all"
                   >
                     {aiLoading ? (
                       <>Processando Análise...</>
@@ -122,7 +145,7 @@ const App: React.FC = () => {
               ) : (
                 <div className="space-y-4">
                    <div className="bg-gray-50 dark:bg-dark-950 p-6 rounded-xl border border-gray-200 dark:border-dark-800 prose dark:prose-invert max-w-none">
-                      <h3 className="flex items-center gap-2 text-indigo-600 dark:text-indigo-400 font-bold text-lg mb-4">
+                      <h3 className="flex items-center gap-2 text-primary-600 dark:text-primary-400 font-bold text-lg mb-4">
                         <MessageSquare size={20} /> Análise Sugerida
                       </h3>
                       <div className="whitespace-pre-line text-gray-800 dark:text-gray-200 leading-relaxed">
@@ -131,7 +154,7 @@ const App: React.FC = () => {
                    </div>
                    <button 
                     onClick={() => setAiResponse('')}
-                    className="text-indigo-600 hover:text-indigo-700 dark:text-indigo-400 dark:hover:text-indigo-300 font-medium text-sm"
+                    className="text-primary-600 hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300 font-medium text-sm"
                    >
                      Fazer nova consulta
                    </button>

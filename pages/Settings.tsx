@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { mockService } from '../services/mockData';
+import { mockService, applyTheme } from '../services/mockData';
 import { CompanySettings } from '../types';
-import { Save, Building2, Phone, Mail, Globe, User, Upload, Image as ImageIcon, CheckCircle2, Settings as SettingsIcon, AlertTriangle } from 'lucide-react';
+import { Save, Building2, Phone, Mail, Globe, User, Upload, Image as ImageIcon, CheckCircle2, Settings as SettingsIcon, AlertTriangle, Palette, Hash, Loader2 } from 'lucide-react';
 
 const Settings: React.FC = () => {
   const [settings, setSettings] = useState<CompanySettings>({
@@ -12,7 +12,8 @@ const Settings: React.FC = () => {
     website: '',
     responsibleName: '',
     logoUrl: '',
-    lowStockThreshold: 10
+    lowStockThreshold: 10,
+    primaryColor: '#3b82f6'
   });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -23,6 +24,8 @@ const Settings: React.FC = () => {
   useEffect(() => {
     mockService.getCompanySettings().then((data) => {
       setSettings(data);
+      // Ensure we apply current theme in case it was direct loaded to this page
+      if (data.primaryColor) applyTheme(data.primaryColor);
       setLoading(false);
     });
   }, []);
@@ -30,10 +33,24 @@ const Settings: React.FC = () => {
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     setSaving(true);
-    await mockService.saveCompanySettings(settings);
-    setSaving(false);
-    setSuccessMsg('Configurações salvas com sucesso!');
-    setTimeout(() => setSuccessMsg(''), 3000);
+    setSuccessMsg('');
+    
+    try {
+      await mockService.saveCompanySettings(settings);
+      
+      // Save theme locally as well to ensure persistence immediately
+      if (settings.primaryColor) {
+        localStorage.setItem('primaryColor', settings.primaryColor);
+      }
+      
+      setSuccessMsg('Configurações salvas com sucesso!');
+      setTimeout(() => setSuccessMsg(''), 3000);
+    } catch (error) {
+      console.error("Failed to save settings:", error);
+      alert('Ocorreu um erro ao salvar as configurações. Verifique sua conexão ou tente novamente.');
+    } finally {
+      setSaving(false);
+    }
   };
 
   const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -50,12 +67,44 @@ const Settings: React.FC = () => {
     }
   };
 
+  const handleColorChange = (color: string) => {
+    setSettings(prev => ({ ...prev, primaryColor: color }));
+    // Only apply theme if valid hex length (simple check)
+    if (color.length === 4 || color.length === 7) {
+      applyTheme(color); 
+    }
+  };
+
+  const presetColors = [
+    '#3b82f6', // Blue (Default)
+    '#0ea5e9', // Sky
+    '#06b6d4', // Cyan
+    '#14b8a6', // Teal
+    '#10b981', // Emerald
+    '#84cc16', // Lime
+    '#eab308', // Yellow
+    '#f59e0b', // Amber
+    '#f97316', // Orange
+    '#ef4444', // Red
+    '#ec4899', // Pink
+    '#d946ef', // Fuchsia
+    '#8b5cf6', // Violet
+    '#6366f1', // Indigo
+    '#64748b', // Slate
+    '#111827', // Gray Black
+  ];
+
   if (loading) {
-     return <div className="text-gray-500">Carregando configurações...</div>;
+     return (
+       <div className="flex flex-col h-full items-center justify-center text-gray-500 gap-2">
+         <Loader2 size={32} className="animate-spin text-primary-500" />
+         <p>Carregando configurações...</p>
+       </div>
+     );
   }
 
   return (
-    <div className="max-w-4xl mx-auto space-y-6">
+    <div className="max-w-4xl mx-auto space-y-6 pb-8">
       <div className="flex items-center justify-between">
          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Configurações da Empresa</h1>
          {successMsg && (
@@ -185,6 +234,61 @@ const Settings: React.FC = () => {
                     <h3 className="text-lg font-medium text-gray-900 dark:text-white border-b border-gray-200 dark:border-dark-800 pb-2 mb-4 flex items-center gap-2">
                        <SettingsIcon size={20} className="text-gray-500" /> Parâmetros do Sistema
                     </h3>
+                    
+                    {/* Theme Customization */}
+                    <div className="mb-6 pb-6 border-b border-gray-100 dark:border-dark-800">
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-3 flex items-center gap-2">
+                            <Palette size={16} className="text-primary-500" /> Tema e Cores
+                        </label>
+                        
+                        <div className="flex flex-col space-y-4">
+                            {/* Custom Picker with Hex Input */}
+                            <div className="flex items-center gap-3">
+                                <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Personalizado</label>
+                                <div className="flex items-center gap-2 bg-gray-50 dark:bg-dark-950 border border-gray-300 dark:border-dark-700 rounded-lg p-1.5 pl-2 shadow-sm">
+                                     <div className="relative w-7 h-7 rounded-full overflow-hidden border border-gray-200 shadow-inner">
+                                        <input 
+                                            type="color" 
+                                            value={settings.primaryColor || '#3b82f6'}
+                                            onChange={(e) => handleColorChange(e.target.value)}
+                                            className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-[150%] h-[150%] p-0 border-0 cursor-pointer"
+                                            title="Clique para escolher uma cor personalizada"
+                                        />
+                                     </div>
+                                     <div className="h-4 w-px bg-gray-300 dark:bg-gray-700 mx-1"></div>
+                                     <div className="flex items-center gap-1">
+                                        <Hash size={12} className="text-gray-400"/>
+                                        <input 
+                                            type="text" 
+                                            value={(settings.primaryColor || '').replace('#', '')}
+                                            onChange={(e) => handleColorChange(`#${e.target.value}`)}
+                                            className="w-16 text-sm font-mono bg-transparent border-none focus:ring-0 text-gray-700 dark:text-gray-300 uppercase p-0"
+                                            maxLength={6}
+                                            placeholder="HEX"
+                                        />
+                                     </div>
+                                </div>
+                            </div>
+
+                            {/* Preset List */}
+                            <div>
+                                <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2 block">Predefinições</label>
+                                <div className="flex flex-wrap items-center gap-3">
+                                    {presetColors.map(color => (
+                                        <button
+                                            key={color}
+                                            type="button"
+                                            onClick={() => handleColorChange(color)}
+                                            className={`w-8 h-8 rounded-full border-2 transition-all hover:scale-110 shadow-sm ${settings.primaryColor?.toLowerCase() === color.toLowerCase() ? 'border-gray-900 dark:border-white scale-110 ring-2 ring-offset-1 ring-gray-200 dark:ring-dark-700' : 'border-transparent'}`}
+                                            style={{ backgroundColor: color }}
+                                            title={color}
+                                        />
+                                    ))}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div>
                          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1 flex items-center gap-2">
@@ -213,9 +317,17 @@ const Settings: React.FC = () => {
                <button 
                   type="submit"
                   disabled={saving}
-                  className="bg-primary-600 hover:bg-primary-700 text-white px-6 py-2.5 rounded-lg font-medium transition-colors flex items-center gap-2 shadow-sm disabled:opacity-70"
+                  className="bg-primary-600 hover:bg-primary-700 text-white px-6 py-2.5 rounded-lg font-medium transition-colors flex items-center gap-2 shadow-sm disabled:opacity-70 disabled:cursor-not-allowed"
                >
-                  {saving ? 'Salvando...' : <><Save size={20} /> Salvar Alterações</>}
+                  {saving ? (
+                    <>
+                      <Loader2 size={20} className="animate-spin" /> Salvando...
+                    </>
+                  ) : (
+                    <>
+                      <Save size={20} /> Salvar Alterações
+                    </>
+                  )}
                </button>
             </div>
 

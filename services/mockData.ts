@@ -1,4 +1,4 @@
-import { Client, Budget, Part, Service, Status, DashboardStats, Vehicle, CompanySettings } from '../types';
+import { Client, Budget, Part, Service, Status, DashboardStats, Vehicle, CompanySettings, GlobalSearchResults } from '../types';
 import { supabase } from './supabaseClient';
 
 // Helper to remove empty IDs so Supabase generates UUIDs
@@ -8,6 +8,58 @@ const cleanId = (obj: any) => {
     delete newObj.id;
   }
   return newObj;
+};
+
+// --- Theme Utility Functions ---
+// Simple hex to RGB and lightening/darkening logic for runtime theme generation
+const hexToRgb = (hex: string) => {
+  let r = 0, g = 0, b = 0;
+  if (hex.length === 4) {
+    r = parseInt("0x" + hex[1] + hex[1]);
+    g = parseInt("0x" + hex[2] + hex[2]);
+    b = parseInt("0x" + hex[3] + hex[3]);
+  } else if (hex.length === 7) {
+    r = parseInt("0x" + hex[1] + hex[2]);
+    g = parseInt("0x" + hex[3] + hex[4]);
+    b = parseInt("0x" + hex[5] + hex[6]);
+  }
+  return { r, g, b };
+};
+
+const mixColors = (color1: {r:number, g:number, b:number}, color2: {r:number, g:number, b:number}, weight: number) => {
+  const w1 = weight;
+  const w2 = 1 - w1;
+  const rgb = {
+    r: Math.round(color1.r * w1 + color2.r * w2),
+    g: Math.round(color1.g * w1 + color2.g * w2),
+    b: Math.round(color1.b * w1 + color2.b * w2)
+  };
+  return `#${rgb.r.toString(16).padStart(2, '0')}${rgb.g.toString(16).padStart(2, '0')}${rgb.b.toString(16).padStart(2, '0')}`;
+};
+
+export const applyTheme = (hexColor: string) => {
+  if (!hexColor) return;
+  
+  const base = hexToRgb(hexColor);
+  const white = { r: 255, g: 255, b: 255 };
+  const black = { r: 0, g: 0, b: 0 };
+
+  const colors = {
+    50: mixColors(white, base, 0.95),  // Very light
+    100: mixColors(white, base, 0.85), // Light
+    500: hexColor,                     // Base
+    600: mixColors(black, base, 0.1),  // Slightly Darker
+    700: mixColors(black, base, 0.2),  // Dark
+    900: mixColors(black, base, 0.45), // Very Dark
+  };
+
+  const root = document.documentElement;
+  root.style.setProperty('--primary-50', colors[50]);
+  root.style.setProperty('--primary-100', colors[100]);
+  root.style.setProperty('--primary-500', colors[500]);
+  root.style.setProperty('--primary-600', colors[600]);
+  root.style.setProperty('--primary-700', colors[700]);
+  root.style.setProperty('--primary-900', colors[900]);
 };
 
 export const mockService = {
@@ -59,9 +111,6 @@ export const mockService = {
       .single();
 
     if (error) throw error;
-    
-    // Note: Vehicles are typically saved via saveVehicle, but if provided here we could handle them.
-    // For this implementation, we focus on the client details to match the UI flow.
   },
 
   deleteClient: async (id: string): Promise<void> => {
@@ -254,18 +303,25 @@ export const mockService = {
   getCompanySettings: async (): Promise<CompanySettings> => {
     const { data, error } = await supabase.from('settings').select('*').limit(1).single();
     
+    // Fallback logic: 
+    // If DB is missing primaryColor (old schema) or fails, we try to use localStorage
+    // to keep the user's selected theme active.
+    const localColor = typeof window !== 'undefined' ? localStorage.getItem('primaryColor') : null;
+
+    const defaults = {
+      name: 'AutoFix Oficina Mecânica',
+      address: '',
+      phone: '',
+      email: '',
+      website: '',
+      responsibleName: '',
+      logoUrl: '',
+      lowStockThreshold: 10,
+      primaryColor: localColor || '#3b82f6' // Prefer local storage over hardcoded blue
+    };
+
     if (error || !data) {
-      // Return defaults if table empty or error
-      return {
-        name: 'AutoFix Oficina Mecânica',
-        address: '',
-        phone: '',
-        email: '',
-        website: '',
-        responsibleName: '',
-        logoUrl: '',
-        lowStockThreshold: 10
-      };
+      return defaults;
     }
 
     return {
@@ -276,7 +332,9 @@ export const mockService = {
       website: data.website,
       responsibleName: data.responsible_name,
       logoUrl: data.logo_url,
-      lowStockThreshold: data.low_stock_threshold
+      lowStockThreshold: data.low_stock_threshold,
+      // If data.primary_color is undefined/null (missing column), use fallback (localStorage or blue)
+      primaryColor: data.primary_color || defaults.primaryColor
     };
   },
 
@@ -290,27 +348,95 @@ export const mockService = {
       website: settings.website,
       responsible_name: settings.responsibleName,
       logo_url: settings.logoUrl,
-      low_stock_threshold: settings.lowStockThreshold
+      low_stock_threshold: settings.lowStockThreshold,
+      primary_color: settings.primaryColor
     };
 
     // Check if we have an existing row (assuming singleton table)
     const { data: existing } = await supabase.from('settings').select('id').limit(1).maybeSingle();
     
-    if (existing?.id) {
-      // Update existing record
-      const { error } = await supabase
-        .from('settings')
-        .update(dbPayload)
-        .eq('id', existing.id);
-      
-      if (error) throw error;
-    } else {
-      // Insert new record
-      const { error } = await supabase
-        .from('settings')
-        .insert(dbPayload);
-      
-      if (error) throw error;
+    try {
+      if (existing?.id) {
+        // Update existing record
+        const { error } = await supabase
+          .from('settings')
+          .update(dbPayload)
+          .eq('id', existing.id);
+        
+        if (error) throw error;
+      } else {
+        // Insert new record
+        const { error } = await supabase
+          .from('settings')
+          .insert(dbPayload);
+        
+        if (error) throw error;
+      }
+    } catch (err: any) {
+      // Fallback: If error is related to missing column (Postgres error 42703), try saving without primary_color
+      // This allows the app to work even if DB schema isn't updated for the new feature
+      if (err.code === '42703' || err.message?.includes('primary_color')) {
+        console.warn("Primary color column missing in DB, saving other settings. Color will be saved locally.");
+        const fallbackPayload = { ...dbPayload };
+        delete (fallbackPayload as any).primary_color;
+        
+        if (existing?.id) {
+          await supabase.from('settings').update(fallbackPayload).eq('id', existing.id);
+        } else {
+          await supabase.from('settings').insert(fallbackPayload);
+        }
+      } else {
+        throw err;
+      }
     }
+  },
+
+  // --- GLOBAL SEARCH ---
+  globalSearch: async (query: string): Promise<GlobalSearchResults> => {
+    if (!query || query.length < 2) return { clients: [], vehicles: [], budgets: [] };
+
+    const searchQuery = `%${query}%`;
+
+    // Execute queries in parallel
+    const [clientsRes, vehiclesRes, budgetsRes] = await Promise.all([
+      supabase.from('clients').select('*').or(`name.ilike.${searchQuery},email.ilike.${searchQuery},phone.ilike.${searchQuery}`).limit(5),
+      supabase.from('vehicles').select('*, clients(name)').or(`plate.ilike.${searchQuery},model.ilike.${searchQuery}`).limit(5),
+      // For budgets, we search by Client Name (stored in budget table) or exact ID match if it's a UUID (skipped for simplicity here, doing client_name)
+      supabase.from('budgets').select('*').ilike('client_name', searchQuery).limit(5)
+    ]);
+
+    // Map Results
+    const clients: Client[] = (clientsRes.data || []).map((c: any) => ({
+      id: c.id,
+      name: c.name,
+      phone: c.phone,
+      email: c.email,
+      vehicles: [] // Minimal info needed for search
+    }));
+
+    const vehicles: (Vehicle & { clientName?: string })[] = (vehiclesRes.data || []).map((v: any) => ({
+      id: v.id,
+      clientId: v.client_id,
+      clientName: v.clients?.name,
+      make: v.make,
+      model: v.model,
+      year: v.year,
+      plate: v.plate,
+      mileage: v.mileage
+    }));
+
+    const budgets: Budget[] = (budgetsRes.data || []).map((b: any) => ({
+      id: b.id,
+      clientId: b.client_id,
+      clientName: b.client_name,
+      vehicleId: b.vehicle_id,
+      vehicleName: b.vehicle_name,
+      status: b.status as Status,
+      dateCreated: b.date_created,
+      totalAmount: b.total_amount,
+      items: []
+    }));
+
+    return { clients, vehicles, budgets };
   }
 };
